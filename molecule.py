@@ -43,6 +43,7 @@ class SensesTask(GFNTask):
         # LogScalar, more precisely a log-reward, which will be passed on to the
         # learning algorithm.
         scalar_logreward = torch.as_tensor(obj_props).squeeze().clamp(min=1e-30).log()
+        print(scalar_logreward)
         return LogScalar(scalar_logreward.flatten())
 
 class MoleculeTask(SensesTask):
@@ -78,13 +79,17 @@ class MoleculeTask(SensesTask):
         
         # Evaluate the molecules probabilities for different fragance notes 
         smiles = Chem.MolToSmiles(mol)
+        print(smiles)
         probabilities = fragance_propabilities_from_smiles(smiles)
+        
 
         # Reward molecules with a high probability for the five most important 
         # fragrance notes for vanilla. The mask is multiplied by 10 to increase 
         # the weight compared to the reward for molecules with just one atom
         reward_array = np.array(self.mask) * self.weight
-        return  float(sum((probabilities * reward_array)[0]))
+        reward = float(sum((probabilities * reward_array)[0]))
+        print(reward)
+        return reward
 
     def compute_obj_properties(self, mols: List[RDMol]) -> Tuple[ObjectProperties, Tensor]:
         # This method computes object properties, these can be anything we want
@@ -113,7 +118,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
     def set_default_hps(self, cfg: Config):
         # Here we choose some specific parameters, in particular, we don't want
         # molecules of more than 7 atoms, we we set
-        cfg.algo.max_nodes = 7
+        cfg.algo.max_nodes = 20 # 95 quantil
 
         # This creates a lagged sampling model, see https://arxiv.org/abs/2310.19685
         cfg.algo.sampling_tau = 0.9
@@ -136,13 +141,13 @@ class MoleculeTrainer(StandardOnlineTrainer):
     def setup_env_context(self):
         # The per-atom generation context
         self.ctx = MolBuildingEnvContext(
-            ["C","N","O"],
+            ["C","N","O", "F", "P", "S"],
             max_nodes=self.cfg.algo.max_nodes,  # Limit the number of atoms
             num_cond_dim=1,  # As per sample_conditional_information, this will be torch.ones((n, 1))
             charges=[0],  # disable charge
             chiral_types=[Chem.rdchem.ChiralType.CHI_UNSPECIFIED],  # disable chirality
             num_rw_feat=0, #how many features are associated with each node during the random walk process. 
-            expl_H_range=[0],
+            expl_H_range=[0,0],
         )
 
 
