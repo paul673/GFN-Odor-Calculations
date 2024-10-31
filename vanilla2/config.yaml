@@ -9,7 +9,7 @@ print_every: 1
 start_at_step: 0
 num_final_gen_steps: null
 num_validation_gen_steps: 1
-num_training_steps: 10
+num_training_steps: 500
 num_workers: 0
 hostname: null
 pickle_mp_messages: false

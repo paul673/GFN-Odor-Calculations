@@ -43,7 +43,6 @@ class SensesTask(GFNTask):
         # LogScalar, more precisely a log-reward, which will be passed on to the
         # learning algorithm.
         scalar_logreward = torch.as_tensor(obj_props).squeeze().clamp(min=1e-30).log()
-        print(scalar_logreward)
         return LogScalar(scalar_logreward.flatten())
 
 class MoleculeTask(SensesTask):
@@ -79,7 +78,6 @@ class MoleculeTask(SensesTask):
         
         # Evaluate the molecules probabilities for different fragance notes 
         smiles = Chem.MolToSmiles(mol)
-        print(smiles)
         probabilities = fragance_propabilities_from_smiles(smiles)
         
 
@@ -88,7 +86,6 @@ class MoleculeTask(SensesTask):
         # the weight compared to the reward for molecules with just one atom
         reward_array = np.array(self.mask) * self.weight
         reward = float(sum((probabilities * reward_array)[0]))
-        print(reward)
         return reward
 
     def compute_obj_properties(self, mols: List[RDMol]) -> Tuple[ObjectProperties, Tensor]:
@@ -147,7 +144,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
             charges=[0],  # disable charge
             chiral_types=[Chem.rdchem.ChiralType.CHI_UNSPECIFIED],  # disable chirality
             num_rw_feat=0, #how many features are associated with each node during the random walk process. 
-            expl_H_range=[0,0],
+            expl_H_range=[0,1],
         )
 
 

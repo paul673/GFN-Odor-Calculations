@@ -17,9 +17,9 @@ vanillin_smiles = "[H]C(=O)C1=CC(OC)=C(O)C=C1"
 # Initialize model
 config = init_empty(Config())
 config.print_every = 1
-config.log_dir = "vanilla2"
+config.log_dir = "vanilla3"
 config.device = dev
-config.num_training_steps = 10
+config.num_training_steps = 500
 config.num_workers = 0
 config.num_validation_gen_steps = 1
 config.overwrite_existing_exp=True
