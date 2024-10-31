@@ -20,7 +20,7 @@ Try the procedure below if not
 
 Install working version of dgl
 
-```pip install dgl-2.0.0-cp39-cp39-win_amd64.whl```
+```pip install dgl-2.0.0-cp310-cp310-win_amd64.whl```
 
 Install openpom
 
