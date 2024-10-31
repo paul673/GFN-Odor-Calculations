@@ -6,7 +6,7 @@ This code has been written for my specialization project. This code is still und
 
 Create a virtual environment:
 
-```py -3.9 -m venv venv```
+```py -3.10.9 -m venv venv```
 
 Activate the environment 
 
