@@ -3,13 +3,13 @@ log_dir: vanilla3
 device: cpu
 seed: 0
 validate_every: 1000
-checkpoint_every: null
+checkpoint_every: 2
 store_all_checkpoints: false
 print_every: 1
 start_at_step: 0
 num_final_gen_steps: null
 num_validation_gen_steps: 1
-num_training_steps: 500
+num_training_steps: 10
 num_workers: 0
 hostname: null
 pickle_mp_messages: false

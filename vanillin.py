@@ -19,13 +19,15 @@ config = init_empty(Config())
 config.print_every = 1
 config.log_dir = "vanilla3"
 config.device = dev
-config.num_training_steps = 500
+config.num_training_steps = 10
 config.num_workers = 0
 config.num_validation_gen_steps = 1
 config.overwrite_existing_exp=True
+config.checkpoint_every = 2
 
 trial = MoleculeTrainer(config,vanillin_smiles, print_config=True)
 trial.run()
+
 
 
 # Generate molecules
