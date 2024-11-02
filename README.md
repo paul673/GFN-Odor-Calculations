@@ -18,6 +18,8 @@ Check if installing `requirements.txt` works. I have not tested it.
 
 Try the procedure below if not
 
+```pip install torch==2.4.1```
+
 Install working version of dgl
 
 ```pip install dgl-2.0.0-cp310-cp310-win_amd64.whl```
@@ -25,5 +27,13 @@ Install working version of dgl
 Install openpom
 
 ```pip install openpom```
+
+```pip install torch==2.4.1```
+
+```pip install torchvision==0.19.1```
+
+```pip install torchaudio==2.4.1```
+
+```pip install numpy==1.26.4``` 
 
 
