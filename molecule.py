@@ -18,6 +18,9 @@ from rdkit import Chem
 from pom_models.functions import fragance_propabilities_from_smiles
 
 
+from rdkit.Chem.AtomPairs.Utils import CosineSimilarity
+
+
 
 
 
@@ -50,25 +53,27 @@ class MoleculeTask(SensesTask):
     Task to generate molecules with fragance nodes compareable to a specified molecule.
     """
 
-    def __init__(self, smiles,num_important_frag_notes=5, weight=10):
+    def __init__(self, target_smiles: List[str]):
         super().__init__()
-        self.smiles = smiles
-        self.num_important_frag_notes = 1 if num_important_frag_notes < 1 else num_important_frag_notes
-        self.mol_prob = fragance_propabilities_from_smiles(self.smiles)[0]
+        self.target_smiles = target_smiles
+        self.num_target_mols = 1 if len(target_smiles) == 0 else len(target_smiles)
+        #self.num_important_frag_notes = 1 if num_important_frag_notes < 1 else num_important_frag_notes
+        #self.mol_prob = fragance_propabilities_from_smiles(self.smiles)[0]
         
         # Edge case multible notes with same probability inform that the number of fragance notes have been increased
-        max_probs = sorted(self.mol_prob, reverse=True)[:num_important_frag_notes]  
+        #max_probs = sorted(self.mol_prob, reverse=True)[:num_important_frag_notes]  
         
-        additional_notes = list(self.mol_prob).count(max_probs[-1]) - list(max_probs).count(max_probs[-1])
-        if additional_notes>0:
-            print(f"Fragrance notes with equal probablility discovered. Increase number of important notes to {additional_notes+num_important_frag_notes}")
+        #additional_notes = list(self.mol_prob).count(max_probs[-1]) - list(max_probs).count(max_probs[-1])
+        #if additional_notes>0:
+            #print(f"Fragrance notes with equal probablility discovered. Increase number of important notes to {additional_notes+num_important_frag_notes}")
         
-        self.mask = list(map(lambda x:  1 if x>max_probs[-1] else  0, self.mol_prob))
-        self.weight = weight
+        #self.mask = list(map(lambda x:  1 if x>max_probs[-1] else  0, self.mol_prob))
+        #self.weight = weight
+        self.target_mols = [Chem.MolFromSmiles(smile) for smile in self.target_smiles]
 
 
 
-    def reward_function(self,mol):
+    def reward_function_legacy(self,mol):
 
         # Skip model evaluation for molecules with one atom to prevent the pom model 
         # from crashing. Set the reward for this case to 1. 
@@ -87,6 +92,70 @@ class MoleculeTask(SensesTask):
         reward_array = np.array(self.mask) * self.weight
         reward = float(sum((probabilities * reward_array)[0]))
         return reward
+    
+    def reward_function(self,mol):
+        """
+        Reward function using cosine similarities for comparing molecules.
+        """
+
+        # Skip model evaluation for molecules with one atom to prevent the pom model 
+        # from crashing. Set the reward for this case to 1. 
+        atoms=mol.GetAtoms()
+        if len(atoms) <= 1:
+            return 0
+        
+        # Evaluate the molecules probabilities for different fragance notes 
+        #smiles = Chem.MolToSmiles(mol)
+        #probabilities = fragance_propabilities_from_smiles(smiles)
+
+        # Compare molecule to dataset with molecules with desired properties
+        # and compute average similarity (between 0 and 1)
+        reward = 0
+        for target_mol in self.target_mols:
+            reward += CosineSimilarity(Chem.RDKFingerprint(mol),Chem.RDKFingerprint(target_mol))
+        reward = reward/self.num_target_mols
+
+
+        # Reward molecules with a high probability for the five most important 
+        # fragrance notes for vanilla. The mask is multiplied by 10 to increase 
+        # the weight compared to the reward for molecules with just one atom
+        #reward_array = np.array(self.mask) * self.weight
+        #reward = float(sum((probabilities * reward_array)[0]))
+        return reward
+    
+    def reward_function_properties(self,mol):
+        """
+        Reward function using cosine similarities for comparing fragrance note probabilities.
+        """
+
+        # Skip model evaluation for molecules with one atom to prevent the pom model 
+        # from crashing. Set the reward for this case to 1. 
+        atoms=mol.GetAtoms()
+        if len(atoms) <= 1:
+            return 0
+        
+        # Evaluate the molecules probabilities for different fragance notes 
+        smiles = Chem.MolToSmiles(mol)
+        probabilities = fragance_propabilities_from_smiles(smiles)[0]
+
+        # Compare molecule to dataset with molecules with desired properties
+        # and compute average similarity (between 0 and 1)
+        reward = 0
+        for target_smile in self.target_smiles:
+            target_probabilities = fragance_propabilities_from_smiles(target_smile)[0]
+            reward += CosineSimilarity(probabilities,target_probabilities)
+        reward = reward/self.num_target_mols
+
+
+        # Reward molecules with a high probability for the five most important 
+        # fragrance notes for vanilla. The mask is multiplied by 10 to increase 
+        # the weight compared to the reward for molecules with just one atom
+        #reward_array = np.array(self.mask) * self.weight
+        #reward = float(sum((probabilities * reward_array)[0]))
+        return reward
+    
+
+
 
     def compute_obj_properties(self, mols: List[RDMol]) -> Tuple[ObjectProperties, Tensor]:
         # This method computes object properties, these can be anything we want
@@ -104,10 +173,10 @@ class MoleculeTask(SensesTask):
 
 
 class MoleculeTrainer(StandardOnlineTrainer):
-    def __init__(self, config, smiles, print_config=True, num_important_frag_notes=5, weight=10):
-        self.smiles = smiles
-        self.num_important_frag_notes=num_important_frag_notes
-        self.weight = weight
+    def __init__(self, config, target_smiles, print_config=True):
+        self.target_smiles = target_smiles
+        #self.num_important_frag_notes=num_important_frag_notes
+        #self.weight = weight
         super().__init__(config, print_config)
         
 
@@ -115,14 +184,14 @@ class MoleculeTrainer(StandardOnlineTrainer):
     def set_default_hps(self, cfg: Config):
         # Here we choose some specific parameters, in particular, we don't want
         # molecules of more than 7 atoms, we we set
-        cfg.algo.max_nodes = 20 # 95 quantil
+        #cfg.algo.max_nodes = 20 # 95 quantil
 
         # This creates a lagged sampling model, see https://arxiv.org/abs/2310.19685
         cfg.algo.sampling_tau = 0.9
 
         # It is possible that our GFN generates impossible molecules. This will be
         # their logreward:
-        cfg.algo.illegal_action_logreward = -75
+        cfg.algo.illegal_action_logreward = -1
         # Disable random actions
         cfg.algo.train_random_action_prob = 0.0
         cfg.algo.valid_random_action_prob = 0.0
@@ -133,7 +202,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
 
     def setup_task(self):
         # The task we created above
-        self.task = MoleculeTask(self.smiles, num_important_frag_notes=self.num_important_frag_notes, weight=self.weight)
+        self.task = MoleculeTask(self.target_smiles)
 
     def setup_env_context(self):
         # The per-atom generation context
