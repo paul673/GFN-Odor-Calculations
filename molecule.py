@@ -77,6 +77,31 @@ class SensesTask(GFNTask):
             if atom.GetNumRadicalElectrons() > 0:
                 return True
         return False
+    
+    def high_carbon_content(self, mol, threshold=0.6):
+        """
+        Check if a molecule has a carbon content below a certain threshold.
+        Args:
+            mol (RDKit Mol): Molecule to check.
+            threshold: minimum carbon content threshold. Default 0.6
+        Returns:
+            bool: True if carbon content above threshold, False otherwise.
+        """
+        num_atoms = mol.GetNumAtoms()
+        if num_atoms == 0:
+            return False
+        atoms = mol.GetAtoms()
+        num_atoms = mol.GetNumAtoms()
+        # Initialize the counter for carbon atoms
+        carbon_count = 0
+
+        # Iterate over all atoms in the molecule and check if the atom is carbon
+        for atom in atoms:
+            if atom.GetSymbol() == 'C':  # 'C' is the symbol for carbon
+                carbon_count += 1
+        carbon_content = carbon_count/num_atoms
+
+        return carbon_content >= threshold
 
     def is_valid_molecule(self, mol):
         try:
@@ -87,6 +112,9 @@ class SensesTask(GFNTask):
                 return False
             # Additional chemical realism checks
             if not self.is_chemically_realistic(mol):
+                return False
+            # Ensure high enough carbon content
+            if not self.high_carbon_content(mol):
                 return False
             return True
         except Exception:
@@ -267,8 +295,8 @@ class MoleculeTrainer(StandardOnlineTrainer):
         # their logreward:
         cfg.algo.illegal_action_logreward = -1
         # Disable random actions
-        cfg.algo.train_random_action_prob = 0.0
-        cfg.algo.valid_random_action_prob = 0.0
+        #cfg.algo.train_random_action_prob = 0.0
+        #cfg.algo.valid_random_action_prob = 0.0
 
 
         cfg.algo.num_from_policy = 64
