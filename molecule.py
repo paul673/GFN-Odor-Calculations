@@ -1,6 +1,7 @@
 # Import libaries
 import numpy as np
 import torch
+from numpy.linalg import norm
 
 from typing import Dict, List, Tuple
 
@@ -13,7 +14,7 @@ from gflownet.config import Config
 from gflownet.envs.mol_building_env import MolBuildingEnvContext
 
 
-from rdkit import Chem
+from rdkit import Chem,DataStructs
 
 from pom_models.functions import fragance_propabilities_from_smiles
 
@@ -70,6 +71,8 @@ class MoleculeTask(SensesTask):
         #self.mask = list(map(lambda x:  1 if x>max_probs[-1] else  0, self.mol_prob))
         #self.weight = weight
         self.target_mols = [Chem.MolFromSmiles(smile) for smile in self.target_smiles]
+        self.target_probs = [fragance_propabilities_from_smiles(smile)[0] for smile in self.target_smiles]
+        #self.fpgen = Chem.AllChem.GetRDKitFPGenerator() # fingerprint generator
 
 
 
@@ -93,7 +96,7 @@ class MoleculeTask(SensesTask):
         reward = float(sum((probabilities * reward_array)[0]))
         return reward
     
-    def reward_function(self,mol):
+    def reward_function_cosine_sim(self,mol):
         """
         Reward function using cosine similarities for comparing molecules.
         """
@@ -123,7 +126,10 @@ class MoleculeTask(SensesTask):
         #reward = float(sum((probabilities * reward_array)[0]))
         return reward
     
-    def reward_function_properties(self,mol):
+    def cosine_similarity(self, vec1,vec2):
+        return np.dot(vec1,vec2)/(norm(vec1)*norm(vec2))
+    
+    def reward_function(self,mol):
         """
         Reward function using cosine similarities for comparing fragrance note probabilities.
         """
@@ -141,9 +147,9 @@ class MoleculeTask(SensesTask):
         # Compare molecule to dataset with molecules with desired properties
         # and compute average similarity (between 0 and 1)
         reward = 0
-        for target_smile in self.target_smiles:
-            target_probabilities = fragance_propabilities_from_smiles(target_smile)[0]
-            reward += CosineSimilarity(probabilities,target_probabilities)
+        for target_probability in self.target_probs:
+            #target_probabilities = fragance_propabilities_from_smiles(target_smile)[0]
+            reward += self.cosine_similarity(probabilities,target_probability)
         reward = reward/self.num_target_mols
 
 
