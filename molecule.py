@@ -91,6 +91,7 @@ class SensesTask(GFNTask):
             return True
         except Exception:
             return False
+        
 
 class MoleculeTask(SensesTask):
     """
@@ -178,8 +179,8 @@ class MoleculeTask(SensesTask):
         """
 
         # Penalize invalid molecules or molecules with unpaired electrons
-        if not self.is_valid_molecule(mol):
-            return -1
+        #if not self.is_valid_molecule(mol):
+           # return -1
 
         # Skip model evaluation for molecules with one atom to prevent the pom model 
         # from crashing. Set the reward for this case to 1. 
@@ -216,9 +217,29 @@ class MoleculeTask(SensesTask):
         # We return an (n, 1) scalar, as well as a (n,) tensor of bools indicating
         # whether the objects are valid. In our case, they all are, but the task
         # may choose to invalidate objects it doesn't want.
+        is_valid = torch.tensor([self.is_valid_molecule(m) for m in mols]).bool()
+        #print(torch.ones(len(mols)).bool(),torch.ones(len(mols)).bool().size())
+        #print(valid_mols_mask,valid_mols_mask.size())
+        #rs = torch.tensor([self.reward_function(m) for m in mols]).float()
+        #return ObjectProperties(rs.reshape((-1, 1))), valid_mols_mask
+            # Compute rewards only for valid molecules
 
-        rs = torch.tensor([self.reward_function(m) for m in mols]).float()
-        return ObjectProperties(rs.reshape((-1, 1))), torch.ones(len(mols)).bool()
+        if not is_valid.any():
+            return ObjectProperties(torch.zeros((0, 1))), is_valid
+        rewards = []
+        for m, is_valid_obj in zip(mols, is_valid):
+            if is_valid_obj:
+                rewards.append(self.reward_function(m))
+        rs = torch.tensor(rewards).float().reshape((-1, 1))
+
+        assert len(rs) == is_valid.sum()
+        return ObjectProperties(rs), is_valid
+        # Convert rewards to a tensor
+        #rs = torch.tensor(rewards).float()
+        #print(rs.reshape((-1, 1)), rs.reshape((-1, 1)).size())
+        #print(valid_mols_mask,valid_mols_mask.size())
+        # Ensure rewards are reshaped to (n, 1)
+        #return ObjectProperties(rs.reshape((-1, 1))), valid_mols_mask
     
 
 
