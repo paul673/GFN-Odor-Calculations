@@ -1,0 +1,2 @@
+16/11/2024 13:33:18 - INFO - logger - Starting training
+16/11/2024 13:33:37 - INFO - logger - iteration 1 : offline_loss:0.00 online_loss:456.18 reward_loss:0.00 invalid_trajectories:0.00 invalid_logprob:0.00 invalid_losses:0.00 backward_vs_unif:0.00 logZ:0.00 loss:456.18 n_loss:0.00 tb_loss:456.18 batch_entropy:38.56 traj_lens:12.61 grad_norm:695.86 grad_norm_clip:77.67 sampled_reward_avg:0.33 train_time:3.16 time_spent:19.38

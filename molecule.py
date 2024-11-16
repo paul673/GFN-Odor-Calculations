@@ -27,6 +27,8 @@ from rdkit.Chem.AtomPairs.Utils import CosineSimilarity
 
 
 
+
+
 class SensesTask(GFNTask):
     """A task for the senses model."""
 
@@ -48,6 +50,47 @@ class SensesTask(GFNTask):
         # learning algorithm.
         scalar_logreward = torch.as_tensor(obj_props).squeeze().clamp(min=1e-30).log()
         return LogScalar(scalar_logreward.flatten())
+    
+
+    def is_chemically_realistic(self, mol):
+        for atom in mol.GetAtoms():
+            # Retrieve the atomic number and degree (number of bonds)
+            atomic_num = atom.GetAtomicNum()
+            valence = atom.GetExplicitValence() + atom.GetImplicitValence()
+            # Add custom checks for phosphorus and other elements
+            if atomic_num == 15:  # Atomic number for Phosphorus
+                if valence > 5:  # P cannot exceed pentavalency
+                    return False
+        return True
+
+
+
+    def has_unpaired_electrons(self, mol):
+        """
+        Check if a molecule has unpaired electrons (radicals).
+        Args:
+            mol (RDKit Mol): Molecule to check.
+        Returns:
+            bool: True if there are unpaired electrons, False otherwise.
+        """
+        for atom in mol.GetAtoms():
+            if atom.GetNumRadicalElectrons() > 0:
+                return True
+        return False
+
+    def is_valid_molecule(self, mol):
+        try:
+            # Standard RDKit sanitization
+            Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL)
+            # Check for unpaired electrons
+            if self.has_unpaired_electrons(mol):
+                return False
+            # Additional chemical realism checks
+            if not self.is_chemically_realistic(mol):
+                return False
+            return True
+        except Exception:
+            return False
 
 class MoleculeTask(SensesTask):
     """
@@ -133,6 +176,10 @@ class MoleculeTask(SensesTask):
         """
         Reward function using cosine similarities for comparing fragrance note probabilities.
         """
+
+        # Penalize invalid molecules or molecules with unpaired electrons
+        if not self.is_valid_molecule(mol):
+            return -1
 
         # Skip model evaluation for molecules with one atom to prevent the pom model 
         # from crashing. Set the reward for this case to 1. 
