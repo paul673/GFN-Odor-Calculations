@@ -41,7 +41,9 @@ class SensesTask(GFNTask):
         # Because we don't want to make the generation conditional on anything, we
         # provide a constant "encoding" vector. We also don't care about a reward
         # temperature, so provide a constant beta = 1
-        return {"beta": torch.ones(n), "encoding": torch.ones(n, 1)}
+        #return {"beta": torch.ones(n), "encoding": torch.ones(n, 1)}
+        #torch.tensor(np.linspace(32,1,100))
+        return {"beta": torch.tensor(np.linspace(32,1,n)), "encoding": torch.ones(n, 1)}
 
 
     def cond_info_to_logreward(self, cond_info: Dict[str, Tensor], obj_props: ObjectProperties) -> LogScalar:
