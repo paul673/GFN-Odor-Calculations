@@ -170,7 +170,7 @@ class MoleculeTask(SensesTask):
         reward = float(sum((probabilities * reward_array)[0]))
         return reward
     
-    def reward_function_cosine_sim(self,mol):
+    def reward_function(self,mol):
         """
         Reward function using cosine similarities for comparing molecules.
         """
@@ -203,7 +203,7 @@ class MoleculeTask(SensesTask):
     def cosine_similarity(self, vec1,vec2):
         return np.dot(vec1,vec2)/(norm(vec1)*norm(vec2))
     
-    def reward_function(self,mol):
+    def reward_function_prob(self,mol):
         """
         Reward function using cosine similarities for comparing fragrance note probabilities.
         """
@@ -311,7 +311,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
     def setup_env_context(self):
         # The per-atom generation context
         self.ctx = MolBuildingEnvContext(
-            ["C","N","O", "F", "P", "S"],
+            ["C","N","O", "F", "P", "S"], #["C","N","O", "F", "P", "S"],
             max_nodes=self.cfg.algo.max_nodes,  # Limit the number of atoms
             num_cond_dim=1,  # As per sample_conditional_information, this will be torch.ones((n, 1))
             charges=[0],  # disable charge
