@@ -22,6 +22,8 @@ from pom_models.functions import fragance_propabilities_from_smiles
 
 from rdkit.Chem.AtomPairs.Utils import CosineSimilarity
 
+from fragments import FRAGMENTS, FRAGMENTS_OPENPOM_DATASET, FRAGMENTS_OPENPOM_VANILLA
+
 
 
 
@@ -347,8 +349,9 @@ class MoleculeTask(SensesTask):
 
 
 class MoleculeTrainer(StandardOnlineTrainer):
-    def __init__(self, config, dataframe=None, print_config=True):
+    def __init__(self, config, dataframe=None, fragments=None, print_config=True):
         self.dataframe = dataframe
+        self.fragments = fragments if fragments else FRAGMENTS
         #self.target_smiles = target_smiles
         #self.num_important_frag_notes=num_important_frag_notes
         #self.weight = weight
@@ -402,7 +405,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
         
         self.ctx = FragMolBuildingEnvContext(
             max_frags=self.cfg.algo.max_nodes,
-            #fragments=self.fragments
+            fragments=self.fragments
         )
 
 
