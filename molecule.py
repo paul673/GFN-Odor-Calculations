@@ -12,6 +12,7 @@ from rdkit.Chem.rdchem import Mol as RDMol
 
 from gflownet.config import Config
 from gflownet.envs.mol_building_env import MolBuildingEnvContext
+from gflownet.envs.frag_mol_env import FragMolBuildingEnvContext
 
 
 from rdkit import Chem,DataStructs
@@ -30,13 +31,13 @@ import pandas as pd
 import random
 
 class VanillaDataset(Dataset):
-    def __init__(self, train=True, data_frame=None, ratio=0.02, split_seed=142857):
+    def __init__(self, train=True, data_frame=None, ratio=1, split_seed=142857):
         self.split_seed=split_seed
         # Create a separate random generator for this instance
         self.random_gen = random.Random(self.split_seed)
 
         self.ratio = ratio
-        if data_frame:
+        if type(data_frame)==pd.DataFrame:
             self.df = data_frame
         else:
             df = pd.read_csv('data.csv')
@@ -61,7 +62,6 @@ class VanillaDataset(Dataset):
 
     
     def __getitem__(self, idx):
-        print(torch.tensor([1]).float())
         return (
             self.obj_to_graph(Chem.MolFromSmiles(self.df["nonStereoSMILES"][self.idcs[idx]])),
             torch.tensor([fragance_propabilities_from_smiles(self.df["nonStereoSMILES"][self.idcs[idx]])[0][-9]]).float()#torch.tensor(self.df.loc[self.idcs[idx]][2:]).float()
@@ -86,20 +86,17 @@ class SensesTask(GFNTask):
         # Because we don't want to make the generation conditional on anything, we
         # provide a constant "encoding" vector. We also don't care about a reward
         # temperature, so provide a constant beta = 1
-        #return {"beta": torch.ones(n), "encoding": torch.ones(n, 1)}
+        return {"beta": torch.ones(n), "encoding": torch.ones(n, 1)}
         #torch.tensor(np.linspace(32,1,100))
-        return {"beta": torch.tensor(np.linspace(32,1,n)), "encoding": torch.ones(n, 1)}
+        #return {"beta": torch.tensor(np.linspace(32,1,n)), "encoding": torch.ones(n, 1)}
 
 
     def cond_info_to_logreward(self, cond_info: Dict[str, Tensor], obj_props: ObjectProperties) -> LogScalar:
         # This method transforms the object properties we computed above into a
         # LogScalar, more precisely a log-reward, which will be passed on to the
         # learning algorithm.
-        print("hu")
-        print(obj_props)
-        print("huhu")
+
         scalar_logreward = torch.as_tensor(obj_props).squeeze().clamp(min=1e-30).log()
-        print(scalar_logreward)
         return LogScalar(scalar_logreward.flatten())
     
 
@@ -160,13 +157,17 @@ class SensesTask(GFNTask):
             Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL)
             # Check for unpaired electrons
             if self.has_unpaired_electrons(mol):
+                #print("unpaired electrons")
                 return False
             # Additional chemical realism checks
             if not self.is_chemically_realistic(mol):
+                #print("Not chemical realistic")
                 return False
             # Ensure high enough carbon content
-            #if not self.high_carbon_content(mol):
-             #   return False
+            if not self.high_carbon_content(mol):
+                #print("low carbon content")
+                #print(Chem.MolToSmiles(mol))
+                return False
             return True
         except Exception:
             return False
@@ -179,11 +180,11 @@ class MoleculeTask(SensesTask):
 
     def __init__(self, dataset: Dataset):
         super().__init__()
+        print(dataset)
         self.training_data_smiles = []#[dataset.df["nonStereoSMILES"]]
         self.idcs = dataset.idcs
         for i in self.idcs:
             self.training_data_smiles.append(dataset.df["nonStereoSMILES"][i])
-        print(len(self.training_data_smiles))
         #self.target_smiles = target_smiles
         self.num_target_mols = 1 if len(self.training_data_smiles) == 0 else len(self.training_data_smiles)
         #self.num_important_frag_notes = 1 if num_important_frag_notes < 1 else num_important_frag_notes
@@ -202,7 +203,6 @@ class MoleculeTask(SensesTask):
         
         self.target_probs = []#[fragance_propabilities_from_smiles(smile)[0] for smile in self.training_data_smiles]
         for smile in self.training_data_smiles:
-            print(smile)
             self.target_probs.append(fragance_propabilities_from_smiles(smile)[0] )
         #self.fpgen = Chem.AllChem.GetRDKitFPGenerator() # fingerprint generator
 
@@ -228,7 +228,7 @@ class MoleculeTask(SensesTask):
         reward = float(sum((probabilities * reward_array)[0]))
         return reward
     
-    def reward_function_(self,mol):
+    def reward_function(self,mol):
         """
         Reward function using cosine similarities for comparing molecules.
         """
@@ -245,10 +245,15 @@ class MoleculeTask(SensesTask):
 
         # Compare molecule to dataset with molecules with desired properties
         # and compute average similarity (between 0 and 1)
+        #reward = 0
+        #for target_mol in self.target_mols:
+           # reward += CosineSimilarity(Chem.RDKFingerprint(mol),Chem.RDKFingerprint(target_mol))
+        # reward = reward/self.num_target_mols
         reward = 0
         for target_mol in self.target_mols:
-            reward += CosineSimilarity(Chem.RDKFingerprint(mol),Chem.RDKFingerprint(target_mol))
-        reward = reward/self.num_target_mols
+            new_reward = CosineSimilarity(Chem.RDKFingerprint(mol),Chem.RDKFingerprint(target_mol))
+            reward = new_reward if new_reward > reward else reward
+        #reward = reward/self.num_target_mols
 
 
         # Reward molecules with a high probability for the five most important 
@@ -261,7 +266,7 @@ class MoleculeTask(SensesTask):
     def cosine_similarity(self, vec1,vec2):
         return np.dot(vec1,vec2)/(norm(vec1)*norm(vec2))
     
-    def reward_function(self,mol):
+    def reward_function_(self,mol):
         """
         Reward function using cosine similarities for comparing fragrance note probabilities.
         """
@@ -282,11 +287,17 @@ class MoleculeTask(SensesTask):
 
         # Compare molecule to dataset with molecules with desired properties
         # and compute average similarity (between 0 and 1)
+        #reward = 0
+        #for target_probability in self.target_probs:
+            #target_probabilities = fragance_propabilities_from_smiles(target_smile)[0]
+            #reward += self.cosine_similarity(probabilities,target_probability)
+        #reward = reward/self.num_target_mols
         reward = 0
         for target_probability in self.target_probs:
             #target_probabilities = fragance_propabilities_from_smiles(target_smile)[0]
-            reward += self.cosine_similarity(probabilities,target_probability)
-        reward = reward/self.num_target_mols
+            new_reward = self.cosine_similarity(probabilities,target_probability)
+            reward = new_reward if new_reward > reward else reward
+        #reward = reward/self.num_target_mols
 
 
         # Reward molecules with a high probability for the five most important 
@@ -311,8 +322,7 @@ class MoleculeTask(SensesTask):
         #rs = torch.tensor([self.reward_function(m) for m in mols]).float()
         #return ObjectProperties(rs.reshape((-1, 1))), valid_mols_mask
             # Compute rewards only for valid molecules
-        print("hei")
-        print(is_valid)
+
         if not is_valid.any():
             return ObjectProperties(torch.zeros((0, 1))), is_valid
         rewards = []
@@ -337,11 +347,12 @@ class MoleculeTask(SensesTask):
 
 
 class MoleculeTrainer(StandardOnlineTrainer):
-    #def __init__(self, config, print_config=True):
+    def __init__(self, config, dataframe=None, print_config=True):
+        self.dataframe = dataframe
         #self.target_smiles = target_smiles
         #self.num_important_frag_notes=num_important_frag_notes
         #self.weight = weight
-        #super().__init__(config, print_config)
+        super().__init__(config, print_config)
         
 
 
@@ -361,16 +372,16 @@ class MoleculeTrainer(StandardOnlineTrainer):
         #cfg.algo.valid_random_action_prob = 0.0
 
 
-        cfg.algo.num_from_policy = 0
-        cfg.algo.num_from_dataset= 70
+        cfg.algo.num_from_policy = 64
+        cfg.algo.num_from_dataset= 0
 
     def setup_task(self):
         # The task we created above
         self.task = MoleculeTask(dataset=self.training_data)
 
     def setup_data(self):
-        self.training_data=VanillaDataset(train=True)
-        self.test_data=VanillaDataset(train=False)
+        self.training_data=VanillaDataset(train=True,data_frame=self.dataframe)
+        self.test_data=VanillaDataset(train=False,data_frame=self.dataframe)
 
     def setup(self):
         super().setup()
@@ -379,7 +390,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
 
     def setup_env_context(self):
         # The per-atom generation context
-        self.ctx = MolBuildingEnvContext(
+        """self.ctx = MolBuildingEnvContext(
             ["C","N","O", "F", "P", "S"], #["C","N","O", "F", "P", "S"],
             max_nodes=self.cfg.algo.max_nodes,  # Limit the number of atoms
             num_cond_dim=1,  # As per sample_conditional_information, this will be torch.ones((n, 1))
@@ -387,6 +398,11 @@ class MoleculeTrainer(StandardOnlineTrainer):
             chiral_types=[Chem.rdchem.ChiralType.CHI_UNSPECIFIED],  # disable chirality
             num_rw_feat=0, #how many features are associated with each node during the random walk process. 
             expl_H_range=[0,1],
+        )"""
+        
+        self.ctx = FragMolBuildingEnvContext(
+            max_frags=self.cfg.algo.max_nodes,
+            #fragments=self.fragments
         )
 
 
