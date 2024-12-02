@@ -152,6 +152,12 @@ class SensesTask(GFNTask):
         carbon_content = carbon_count/num_atoms
 
         return carbon_content >= threshold
+    
+    def is_large_molecule(self,mol,max_num_atoms=15):
+        num_of_atoms = mol.GetNumAtoms()
+        if num_of_atoms <= max_num_atoms:
+            return False
+        return True
 
     def is_valid_molecule(self, mol):
         try:
@@ -170,8 +176,18 @@ class SensesTask(GFNTask):
                 #print("low carbon content")
                 #print(Chem.MolToSmiles(mol))
                 return False
+            
+
+            #if self.is_large_molecule(mol):
+                #return False
+
+
             return True
+        
+            
+
         except Exception:
+            #print("exept")
             return False
         
 
@@ -230,7 +246,7 @@ class MoleculeTask(SensesTask):
         reward = float(sum((probabilities * reward_array)[0]))
         return reward
     
-    def reward_function(self,mol):
+    def reward_function_(self,mol):
         """
         Reward function using cosine similarities for comparing molecules.
         """
@@ -263,12 +279,16 @@ class MoleculeTask(SensesTask):
         # the weight compared to the reward for molecules with just one atom
         #reward_array = np.array(self.mask) * self.weight
         #reward = float(sum((probabilities * reward_array)[0]))
+
+        # Penalty for large molecules
+        #reward = self.large_molecule_penalty(reward,mol)
+
         return reward
     
     def cosine_similarity(self, vec1,vec2):
         return np.dot(vec1,vec2)/(norm(vec1)*norm(vec2))
     
-    def reward_function_(self,mol):
+    def reward_function(self,mol):
         """
         Reward function using cosine similarities for comparing fragrance note probabilities.
         """
@@ -307,9 +327,23 @@ class MoleculeTask(SensesTask):
         # the weight compared to the reward for molecules with just one atom
         #reward_array = np.array(self.mask) * self.weight
         #reward = float(sum((probabilities * reward_array)[0]))
+
+        # Penalty for large molecules
+        #reward = self.large_molecule_penalty(reward,mol)
+
         return reward
     
 
+    def large_molecule_penalty(self, reward, mol,max_num_atoms = 15):
+        """
+        Penalty for generating large molecules. The 75th percentile (3rd quartile) of the openpom dataset contains molecules with up to 15 atoms. 
+        This function decreases the reward exponentially if the length of the molecule exceeds max_num_atoms. The 95th percentile reward at 20 atoms will 
+        be decreased to approximatly 60% of its original value. 
+        """
+        num_of_atoms = mol.GetNumAtoms()
+        if num_of_atoms <= max_num_atoms:
+            return reward
+        return reward * np.exp(-0.1*(num_of_atoms-max_num_atoms))
 
 
     def compute_obj_properties(self, mols: List[RDMol]) -> Tuple[ObjectProperties, Tensor]:
@@ -381,6 +415,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
     def setup_task(self):
         # The task we created above
         self.task = MoleculeTask(dataset=self.training_data)
+        #self.task = MoleculeTask()
 
     def setup_data(self):
         self.training_data=VanillaDataset(train=True,data_frame=self.dataframe)
