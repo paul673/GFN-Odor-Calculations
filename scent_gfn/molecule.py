@@ -42,7 +42,7 @@ class VanillaDataset(Dataset):
         if type(data_frame)==pd.DataFrame:
             self.df = data_frame
         else:
-            df = pd.read_csv('data.csv')
+            df = pd.read_csv('../data/data.csv')
             self.df = df
             #self.df = df.loc[df['vanilla'] == 1]
 
@@ -79,18 +79,7 @@ class VanillaDataset(Dataset):
 class SensesTask(GFNTask):
     """A task for the senses model."""
 
-    def sample_conditional_information(self, n: int, train_it: int) -> Dict[str, Tensor]:
-        # This method exists to initiate trajectories that may depend on different
-        # conditional information. For example, we could tell the model to generate
-        # molecules with a logP between 3 and 4, and penalize it (in the
-        # cond_info_to_logreward method) if it doesn't.
 
-        # Because we don't want to make the generation conditional on anything, we
-        # provide a constant "encoding" vector. We also don't care about a reward
-        # temperature, so provide a constant beta = 1
-        return {"beta": torch.ones(n), "encoding": torch.ones(n, 1)}
-        #torch.tensor(np.linspace(32,1,100))
-        #return {"beta": torch.tensor(np.linspace(32,1,n)), "encoding": torch.ones(n, 1)}
 
 
     def cond_info_to_logreward(self, cond_info: Dict[str, Tensor], obj_props: ObjectProperties) -> LogScalar:
@@ -159,36 +148,7 @@ class SensesTask(GFNTask):
             return False
         return True
 
-    def is_valid_molecule(self, mol):
-        try:
-            # Standard RDKit sanitization
-            Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL)
-            # Check for unpaired electrons
-            if self.has_unpaired_electrons(mol):
-                #print("unpaired electrons")
-                return False
-            # Additional chemical realism checks
-            if not self.is_chemically_realistic(mol):
-                #print("Not chemical realistic")
-                return False
-            # Ensure high enough carbon content
-            if not self.high_carbon_content(mol):
-                #print("low carbon content")
-                #print(Chem.MolToSmiles(mol))
-                return False
-            
 
-            #if self.is_large_molecule(mol):
-                #return False
-
-
-            return True
-        
-            
-
-        except Exception:
-            #print("exept")
-            return False
         
 
 class MoleculeTask(SensesTask):
@@ -196,15 +156,65 @@ class MoleculeTask(SensesTask):
     Task to generate molecules with fragance nodes compareable to a specified molecule.
     """
 
-    def __init__(self, dataset: Dataset):
+    def __init__(self, data_tuple:tuple[str,str,str,list,float]): # (reward func type , similarity measure)
         super().__init__()
-        print(dataset)
-        self.training_data_smiles = []#[dataset.df["nonStereoSMILES"]]
-        self.idcs = dataset.idcs
-        for i in self.idcs:
-            self.training_data_smiles.append(dataset.df["nonStereoSMILES"][i])
+        sim_func_dict = {
+            "openpom":{
+                "func": self.reward_function_openpom,
+                "cosine": self.cosine_similarity,
+                "tanimoto": self.cosine_similarity,
+            },
+            "structure":{
+                "func": self.reward_function_structure,
+                "cosine": CosineSimilarity,
+                "tanimoto": CosineSimilarity,
+            }
+        }
+        reward_function_type = data_tuple[0]
+        similarity_measure = data_tuple[1]
+        penalty = data_tuple[2]
+        data = data_tuple[3]
+        self.penalty = penalty
+        exp_penalty = penalty[0] == "exponential"
+        rew_func = sim_func_dict[reward_function_type]["func"]
+        sim_func = sim_func_dict[reward_function_type][similarity_measure]
+        self.beta = data_tuple[4]
+
+
+        
+        if type(data[0])== str:
+            print("SMILES input data detected ...")
+            self.init_mol_data(data)
+        else:
+            print("OpenPOM input data detected ...")
+            self.init_pom_data(data)
+
+        print(f"Reward function: {rew_func.__name__} | Similarity measure: {sim_func.__name__} | exp_penalty: {exp_penalty} | max_mol={penalty[1]}")
+        self.selected_reward_func = lambda mol: rew_func(mol, sim_func, penalty=exp_penalty, max_num_atoms=penalty[1] if exp_penalty else 0)
+
+        """if reward_function_type=="openpom": 
+            if similarity_measure=="cosine":
+                print("Reward function: OpenPOM with cosine similarity")
+                self.selected_reward_func = lambda mol: self.reward_function_openpom(mol, self.cosine_similarity, penalty=exp_penalty)
+            else:
+                print("Reward function: OpenPOM with tanimoto similarity")
+                self.selected_reward_func = lambda mol: self.reward_function_openpom(mol, self.cosine_similarity, penalty=exp_penalty)
+        else:
+            if similarity_measure=="cosine":
+                print("Reward function: Structure with cosine similarity")
+                self.selected_reward_func = lambda mol: self.reward_function_structure(mol, CosineSimilarity, penalty=exp_penalty)
+            else:
+                print("Reward function: Structure with tanimoto similarity")
+                self.selected_reward_func = lambda mol: self.reward_function_structure(mol, CosineSimilarity, penalty=exp_penalty)"""
+
+
+        #print(dataset)
+        #self.training_data_smiles = []#[dataset.df["nonStereoSMILES"]]
+        #self.idcs = dataset.idcs
+        #for i in self.idcs:
+           # self.training_data_smiles.append(dataset.df["nonStereoSMILES"][i])
         #self.target_smiles = target_smiles
-        self.num_target_mols = 1 if len(self.training_data_smiles) == 0 else len(self.training_data_smiles)
+        #self.num_target_mols = 1 if len(self.training_data_smiles) == 0 else len(self.training_data_smiles)
         #self.num_important_frag_notes = 1 if num_important_frag_notes < 1 else num_important_frag_notes
         #self.mol_prob = fragance_propabilities_from_smiles(self.smiles)[0]
         
@@ -217,13 +227,48 @@ class MoleculeTask(SensesTask):
         
         #self.mask = list(map(lambda x:  1 if x>max_probs[-1] else  0, self.mol_prob))
         #self.weight = weight
-        self.target_mols = [Chem.MolFromSmiles(smile) for smile in self.training_data_smiles]
+        #self.target_mols = [Chem.MolFromSmiles(smile) for smile in self.training_data_smiles]
         
-        self.target_probs = []#[fragance_propabilities_from_smiles(smile)[0] for smile in self.training_data_smiles]
-        for smile in self.training_data_smiles:
-            self.target_probs.append(fragance_propabilities_from_smiles(smile)[0] )
+        #self.target_probs = []#[fragance_propabilities_from_smiles(smile)[0] for smile in self.training_data_smiles]
+        #for smile in self.training_data_smiles:
+            #self.target_probs.append(fragance_propabilities_from_smiles(smile)[0] )
         #self.fpgen = Chem.AllChem.GetRDKitFPGenerator() # fingerprint generator
 
+
+    def sample_conditional_information(self, n: int, train_it: int) -> Dict[str, Tensor]:
+        # This method exists to initiate trajectories that may depend on different
+        # conditional information. For example, we could tell the model to generate
+        # molecules with a logP between 3 and 4, and penalize it (in the
+        # cond_info_to_logreward method) if it doesn't.
+
+        # Because we don't want to make the generation conditional on anything, we
+        # provide a constant "encoding" vector. We also don't care about a reward
+        # temperature, so provide a constant beta = 1
+        return {"beta": torch.ones(n)*self.beta, "encoding": torch.ones(n, 1)}
+        #torch.tensor(np.linspace(32,1,100))
+        #return {"beta": torch.tensor(np.linspace(32,1,n)), "encoding": torch.ones(n, 1)}
+
+    def init_mol_data(self, data):
+        #print("Reading SMILES string vector training data ...")
+        self.training_data_smiles = data
+        self.num_target_mols = len(self.training_data_smiles)
+        self.target_mols = [Chem.MolFromSmiles(smile) for smile in self.training_data_smiles]
+        self.target_probs = []
+        self.target_fingerprints = [Chem.RDKFingerprint(target_mol) for target_mol in self.target_mols]
+        for smile in self.training_data_smiles:
+            self.target_probs.append(fragance_propabilities_from_smiles(smile)[0] )
+        return
+    
+    def init_pom_data(self,data):
+        #print("Reading OpenPOM vector training data ...")
+        self.target_probs = data
+        self.target_mols = None
+        self.training_data_smiles = None
+        self.num_target_mols = len(data)
+        return
+    
+    def reward_function(self,mol):
+        return self.selected_reward_func(mol)
 
 
     def reward_function_legacy(self,mol):
@@ -246,16 +291,16 @@ class MoleculeTask(SensesTask):
         reward = float(sum((probabilities * reward_array)[0]))
         return reward
     
-    def reward_function_(self,mol):
+    def reward_function_structure(self,mol, similarity_func, penalty=False,max_num_atoms=15):
         """
         Reward function using cosine similarities for comparing molecules.
         """
 
         # Skip model evaluation for molecules with one atom to prevent the pom model 
         # from crashing. Set the reward for this case to 1. 
-        atoms=mol.GetAtoms()
-        if len(atoms) <= 1:
-            return 0
+        #atoms=mol.GetAtoms()
+        #if len(atoms) <= 1:
+            #return 0
         
         # Evaluate the molecules probabilities for different fragance notes 
         #smiles = Chem.MolToSmiles(mol)
@@ -268,8 +313,8 @@ class MoleculeTask(SensesTask):
            # reward += CosineSimilarity(Chem.RDKFingerprint(mol),Chem.RDKFingerprint(target_mol))
         # reward = reward/self.num_target_mols
         reward = 0
-        for target_mol in self.target_mols:
-            new_reward = CosineSimilarity(Chem.RDKFingerprint(mol),Chem.RDKFingerprint(target_mol))
+        for target_fingerprint in self.target_fingerprints:
+            new_reward = similarity_func(Chem.RDKFingerprint(mol),target_fingerprint)
             reward = new_reward if new_reward > reward else reward
         #reward = reward/self.num_target_mols
 
@@ -280,15 +325,18 @@ class MoleculeTask(SensesTask):
         #reward_array = np.array(self.mask) * self.weight
         #reward = float(sum((probabilities * reward_array)[0]))
 
-        # Penalty for large molecules
-        #reward = self.large_molecule_penalty(reward,mol)
+        #Penalty for large molecules
+        if penalty:
+            reward = self.large_molecule_penalty(reward,mol, max_num_atoms=max_num_atoms)
 
         return reward
+    
+    
     
     def cosine_similarity(self, vec1,vec2):
         return np.dot(vec1,vec2)/(norm(vec1)*norm(vec2))
     
-    def reward_function(self,mol):
+    def reward_function_openpom(self,mol, similarity_func, penalty=False,max_num_atoms=15):
         """
         Reward function using cosine similarities for comparing fragrance note probabilities.
         """
@@ -306,7 +354,7 @@ class MoleculeTask(SensesTask):
         # Evaluate the molecules probabilities for different fragance notes 
         smiles = Chem.MolToSmiles(mol)
         probabilities = fragance_propabilities_from_smiles(smiles)[0]
-
+        
         # Compare molecule to dataset with molecules with desired properties
         # and compute average similarity (between 0 and 1)
         #reward = 0
@@ -317,7 +365,7 @@ class MoleculeTask(SensesTask):
         reward = 0
         for target_probability in self.target_probs:
             #target_probabilities = fragance_propabilities_from_smiles(target_smile)[0]
-            new_reward = self.cosine_similarity(probabilities,target_probability)
+            new_reward = similarity_func(probabilities,target_probability)
             reward = new_reward if new_reward > reward else reward
         #reward = reward/self.num_target_mols
 
@@ -328,11 +376,43 @@ class MoleculeTask(SensesTask):
         #reward_array = np.array(self.mask) * self.weight
         #reward = float(sum((probabilities * reward_array)[0]))
 
-        # Penalty for large molecules
-        #reward = self.large_molecule_penalty(reward,mol)
+        #Penalty for large molecules
+        if penalty:
+            reward = self.large_molecule_penalty(reward,mol,max_num_atoms=max_num_atoms)
 
         return reward
     
+
+    def is_valid_molecule(self, mol):
+        try:
+            # Standard RDKit sanitization
+            Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL)
+            # Check for unpaired electrons
+            if self.has_unpaired_electrons(mol):
+                #print(f"unpaired electrons {Chem.MolToSmiles(mol)}")
+                return False
+            # Additional chemical realism checks
+            if not self.is_chemically_realistic(mol):
+                #print(f"Not chemical realistic {Chem.MolToSmiles(mol)}")
+                return False
+            # Ensure high enough carbon content
+            if not self.high_carbon_content(mol):
+                #print(f"low carbon content {Chem.MolToSmiles(mol)}")
+                #print(Chem.MolToSmiles(mol))
+                return False
+            
+            if self.penalty[0] == "hard":
+                #print("large")
+                if self.is_large_molecule(mol,max_num_atoms=self.penalty[1]):
+                    return False
+
+
+            return True
+        
+            
+        except Exception:
+            #print("exept")
+            return False
 
     def large_molecule_penalty(self, reward, mol,max_num_atoms = 15):
         """
@@ -353,6 +433,8 @@ class MoleculeTask(SensesTask):
         # whether the objects are valid. In our case, they all are, but the task
         # may choose to invalidate objects it doesn't want.
         is_valid = torch.tensor([self.is_valid_molecule(m) for m in mols]).bool()
+        #print([Chem.MolToSmiles(m) for m in mols])
+        #print(is_valid)
         #print(torch.ones(len(mols)).bool(),torch.ones(len(mols)).bool().size())
         #print(valid_mols_mask,valid_mols_mask.size())
         #rs = torch.tensor([self.reward_function(m) for m in mols]).float()
@@ -383,9 +465,9 @@ class MoleculeTask(SensesTask):
 
 
 class MoleculeTrainer(StandardOnlineTrainer):
-    def __init__(self, config, dataframe=None, fragments=None, print_config=True):
-        self.dataframe = dataframe
-        self.fragments = fragments if fragments else FRAGMENTS
+    def __init__(self, config, data_tuple, fragments=None, print_config=True):
+        self.data_tuple = data_tuple
+        self.fragments = fragments if fragments else None
         #self.target_smiles = target_smiles
         #self.num_important_frag_notes=num_important_frag_notes
         #self.weight = weight
@@ -403,7 +485,7 @@ class MoleculeTrainer(StandardOnlineTrainer):
 
         # It is possible that our GFN generates impossible molecules. This will be
         # their logreward:
-        cfg.algo.illegal_action_logreward = -1
+        
         # Disable random actions
         #cfg.algo.train_random_action_prob = 0.0
         #cfg.algo.valid_random_action_prob = 0.0
@@ -414,34 +496,37 @@ class MoleculeTrainer(StandardOnlineTrainer):
 
     def setup_task(self):
         # The task we created above
-        self.task = MoleculeTask(dataset=self.training_data)
-        #self.task = MoleculeTask()
+        #self.task = MoleculeTask(dataset=self.training_data)
+        self.task = MoleculeTask(data_tuple=self.data_tuple)
 
-    def setup_data(self):
-        self.training_data=VanillaDataset(train=True,data_frame=self.dataframe)
-        self.test_data=VanillaDataset(train=False,data_frame=self.dataframe)
+    #def setup_data(self):
+        #self.training_data=VanillaDataset(train=True,data_frame=self.dataframe)
+        #self.test_data=VanillaDataset(train=False,data_frame=self.dataframe)
 
-    def setup(self):
-        super().setup()
-        self.training_data.setup(self.task,self.ctx)
-        self.test_data.setup(self.task,self.ctx)
+    #def setup(self):
+        #super().setup()
+        #self.training_data.setup(self.task,self.ctx)
+        #self.test_data.setup(self.task,self.ctx)
 
     def setup_env_context(self):
         # The per-atom generation context
-        """self.ctx = MolBuildingEnvContext(
-            ["C","N","O", "F", "P", "S"], #["C","N","O", "F", "P", "S"],
-            max_nodes=self.cfg.algo.max_nodes,  # Limit the number of atoms
-            num_cond_dim=1,  # As per sample_conditional_information, this will be torch.ones((n, 1))
-            charges=[0],  # disable charge
-            chiral_types=[Chem.rdchem.ChiralType.CHI_UNSPECIFIED],  # disable chirality
-            num_rw_feat=0, #how many features are associated with each node during the random walk process. 
-            expl_H_range=[0,1],
-        )"""
-        
-        self.ctx = FragMolBuildingEnvContext(
-            max_frags=self.cfg.algo.max_nodes,
-            fragments=self.fragments
-        )
+        if self.fragments == None:
+            print("Building molecules using atoms ...")
+            self.ctx = MolBuildingEnvContext(
+                ["C","N","O", "F", "S"], #["C","N","O", "F", "P", "S"],
+                max_nodes=self.cfg.algo.max_nodes,  # Limit the number of atoms
+                num_cond_dim=1,  # As per sample_conditional_information, this will be torch.ones((n, 1))
+                charges=[0],  # disable charge
+                chiral_types=[Chem.rdchem.ChiralType.CHI_UNSPECIFIED],  # disable chirality
+                num_rw_feat=0, #how many features are associated with each node during the random walk process. 
+                expl_H_range=[0],# [0,1]
+            )
+        else:
+            print("Building molecules using fragments ...")
+            self.ctx = FragMolBuildingEnvContext(
+                max_frags=self.cfg.algo.max_nodes,
+                fragments=self.fragments
+            )
 
 
 

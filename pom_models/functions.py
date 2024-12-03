@@ -2,8 +2,10 @@ import deepchem as dc
 from openpom.feat.graph_featurizer import GraphFeaturizer, GraphConvConstants
 from .models import MPNNPOMModel
 import pandas as pd
+import os
 
 MODULENAME = "pom_models"
+base_dir = os.path.dirname(os.path.abspath(__file__))
 
 def smiles_to_dataset(smiles):
     """
@@ -19,13 +21,12 @@ def smiles_to_dataset(smiles):
 
 
 def get_train_ratios():
-    df = pd.read_csv(f"{MODULENAME}/train_ratios.csv", index_col=0)
+    #df = pd.read_csv(f"{MODULENAME}/train_ratios.csv", index_col=0)
+    df = pd.read_csv(os.path.join(base_dir, "train_ratios.csv"), index_col=0)
     train_ratios = list(df["train_ratios"])
     return train_ratios
 
-
-def fragance_propabilities_from_smiles(smiles):
-    single_dataset = smiles_to_dataset(smiles)
+def get_model():
     train_ratios = get_train_ratios()
 
     model = MPNNPOMModel(n_tasks = 138,
@@ -55,12 +56,19 @@ def fragance_propabilities_from_smiles(smiles):
                             self_loop = False,
                             optimizer_name = 'adam',
                             log_frequency = 32,
-                            model_dir = f"{MODULENAME}/trained_model",
+                            model_dir = os.path.join(base_dir, "trained_model"),
                             device_name='cpu')
     
     # Restore the model from the checkpoint
     model.restore()
+    return model
+
+MODEL = get_model()
+
+def fragance_propabilities_from_smiles(smiles):
+    single_dataset = smiles_to_dataset(smiles)
+    
 
     # Predict the probabilities for the single molecule
-    predicted_probabilities = model.predict(single_dataset)
+    predicted_probabilities = MODEL.predict(single_dataset)
     return predicted_probabilities
