@@ -1,4 +1,6 @@
 venv
 __pycache__
 pom_models/__pycache__/
+old_runs
+old_files
 
