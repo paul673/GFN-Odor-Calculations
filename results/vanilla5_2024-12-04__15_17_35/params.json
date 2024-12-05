@@ -1,0 +1,1 @@
+{"save_name": "vanilla5", "reward_func": "openpom", "similarity": "cosine", "graph_building": null, "iterations": 500, "max_nodes": 20, "illegal_logreward": -100, "beta": 10.0, "large_mol_pen": [null, null]}
