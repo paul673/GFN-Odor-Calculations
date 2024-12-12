@@ -88,6 +88,9 @@ class SensesTask(GFNTask):
         # learning algorithm.
 
         scalar_logreward = torch.as_tensor(obj_props).squeeze().clamp(min=1e-30).log()
+        assert "beta" in cond_info.keys()
+        beta = cond_info["beta"]
+        scalar_logreward = scalar_logreward*beta
         return LogScalar(scalar_logreward.flatten())
     
 
