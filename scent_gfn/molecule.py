@@ -21,6 +21,7 @@ from pom_models.functions import fragance_propabilities_from_smiles
 
 
 from rdkit.Chem.AtomPairs.Utils import CosineSimilarity
+from rdkit.DataStructs import TanimotoSimilarity
 
 from scent_gfn.fragments import FRAGMENTS, FRAGMENTS_OPENPOM_DATASET, FRAGMENTS_OPENPOM_VANILLA
 
@@ -165,12 +166,12 @@ class MoleculeTask(SensesTask):
             "openpom":{
                 "func": self.reward_function_openpom,
                 "cosine": self.cosine_similarity,
-                "tanimoto": self.cosine_similarity,
+                "tanimoto": self.tanimoto_similarity,
             },
             "structure":{
                 "func": self.reward_function_structure,
                 "cosine": CosineSimilarity,
-                "tanimoto": CosineSimilarity,
+                "tanimoto": TanimotoSimilarity,
             }
         }
         reward_function_type = data_tuple[0]
@@ -338,6 +339,9 @@ class MoleculeTask(SensesTask):
     
     def cosine_similarity(self, vec1,vec2):
         return np.dot(vec1,vec2)/(norm(vec1)*norm(vec2))
+    
+    def tanimoto_similarity(self, vec1,vec2):
+        return np.dot(vec1,vec2)/(np.dot(vec1,vec1)+np.dot(vec2,vec2)-np.dot(vec1,vec2))
     
     def reward_function_openpom(self,mol, similarity_func, penalty=False,max_num_atoms=15):
         """
