@@ -172,7 +172,13 @@ class MoleculeTask(SensesTask):
                 "func": self.reward_function_structure,
                 "cosine": CosineSimilarity,
                 "tanimoto": TanimotoSimilarity,
+            },
+            "combined":{
+                "func": self.reward_function_combined,
+                "cosine": lambda x : 1,
+                "tanimoto": lambda x : 1,
             }
+
         }
         reward_function_type = data_tuple[0]
         similarity_measure = data_tuple[1]
@@ -189,6 +195,9 @@ class MoleculeTask(SensesTask):
         if type(data[0])== str:
             print("SMILES input data detected ...")
             self.init_mol_data(data)
+        elif type(data[0])== tuple:
+            print("Combined input data detected ...")
+            self.init_combined_data(data)
         else:
             print("OpenPOM input data detected ...")
             self.init_pom_data(data)
@@ -271,6 +280,16 @@ class MoleculeTask(SensesTask):
         self.num_target_mols = len(data)
         return
     
+    def init_combined_data(self,data):
+        self.training_data_smiles,self.target_probs = data
+        self.num_target_mols = len(self.training_data_smiles)
+        self.target_mols = [Chem.MolFromSmiles(smile) for smile in self.training_data_smiles]
+        self.target_fingerprints = [Chem.RDKFingerprint(target_mol) for target_mol in self.target_mols]
+        for smile in self.training_data_smiles:
+            self.target_probs.append(fragance_propabilities_from_smiles(smile)[0] )
+
+        return
+    
     def reward_function(self,mol):
         return self.selected_reward_func(mol)
 
@@ -334,7 +353,16 @@ class MoleculeTask(SensesTask):
             reward = self.large_molecule_penalty(reward,mol, max_num_atoms=max_num_atoms)
 
         return reward
-    
+
+    def reward_function_combined(self,mol, similarity_func, penalty=False,max_num_atoms=15, openpom_weight=0.7):
+        openpom_reward = self.reward_function_openpom(mol, self.cosine_similarity, penalty,max_num_atoms)
+        structure_reward = self.reward_function_structure(mol, CosineSimilarity, penalty,max_num_atoms)
+        reward = openpom_reward * openpom_weight + structure_reward*(1-openpom_weight)
+        #Penalty for large molecules
+        if penalty:
+            reward = self.large_molecule_penalty(reward,mol, max_num_atoms=max_num_atoms)
+
+        return reward
     
     
     def cosine_similarity(self, vec1,vec2):

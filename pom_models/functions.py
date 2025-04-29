@@ -26,7 +26,7 @@ def get_train_ratios():
     train_ratios = list(df["train_ratios"])
     return train_ratios
 
-def get_model():
+def get_model(model_dir="trained_model"):
     train_ratios = get_train_ratios()
 
     model = MPNNPOMModel(n_tasks = 138,
@@ -56,7 +56,7 @@ def get_model():
                             self_loop = False,
                             optimizer_name = 'adam',
                             log_frequency = 32,
-                            model_dir = os.path.join(base_dir, "trained_model"),
+                            model_dir = os.path.join(base_dir, model_dir),
                             device_name='cpu')
     
     # Restore the model from the checkpoint
@@ -64,7 +64,8 @@ def get_model():
     return model
 
 MODEL = get_model()
-
+TRAINING_MODEL = get_model("training_model07")
+TEST_MODEL = get_model("test_model03")
 def fragance_propabilities_from_smiles(smiles):
     single_dataset = smiles_to_dataset(smiles)
     
@@ -72,3 +73,14 @@ def fragance_propabilities_from_smiles(smiles):
     # Predict the probabilities for the single molecule
     predicted_probabilities = MODEL.predict(single_dataset)
     return predicted_probabilities
+
+def fragance_propabilities_from_smiles_(smiles, model_name):
+    single_dataset = smiles_to_dataset(smiles)
+    
+
+    # Predict the probabilities for the single molecule
+    predicted_probabilities = model_name.predict(single_dataset)
+    return predicted_probabilities
+
+fragance_propabilities_from_smiles_train = lambda smiles: fragance_propabilities_from_smiles_(smiles, TRAINING_MODEL)
+fragance_propabilities_from_smiles_test = lambda smiles: fragance_propabilities_from_smiles_(smiles, TEST_MODEL)
